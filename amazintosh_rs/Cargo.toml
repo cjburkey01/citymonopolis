@@ -1,0 +1,27 @@
+[package]
+name = "amazintosh_rs"
+description = "A 2D/3D game engine built from scratch for Rust!"
+version = "0.1.0"
+authors = ["CJ Burkey <cjburkey01@gmail.com>"]
+edition = "2018"
+build = "build.rs"
+
+[dependencies]
+glm = "0.2.3"
+specs = { version = "0.16.1", features = ["parallel", "specs-derive"] }
+
+[dependencies.sdl2]
+version = "0.34.2"
+default-features = false
+features = ["use-vcpkg", "static-link", "ttf", "image"]
+
+[package.metadata.vcpkg]
+dependencies = ["sdl2", "sdl2-image", "sdl2-ttf"]
+git = "https://github.com/microsoft/vcpkg"
+branch = "master"
+
+[package.metadata.vcpkg.target]
+x86_64-pc-windows-msvc = { triplet = "x64-windows-static-md" }
+
+[build-dependencies]
+gl_generator = "0.14.0"

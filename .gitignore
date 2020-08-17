@@ -1,0 +1,7 @@
+# IDEA
+.idea
+*.iml
+
+# Rust
+target
+[Cc]argo.lock

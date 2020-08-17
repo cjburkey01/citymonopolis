@@ -1,0 +1,19 @@
+[package]
+name = "citymonopolis"
+description = "A city builder/simulator built in Rust!"
+version = "0.1.0"
+authors = ["CJ Burkey <cjburkey01@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+amazintosh_rs = { path = "./amazintosh_rs" }
+rand = "0.7.3"
+specs = { version = "0.16.1", features = ["parallel", "specs-derive"] }
+
+[package.metadata.vcpkg]
+dependencies = ["sdl2", "sdl2-image", "sdl2-ttf"]
+git = "https://github.com/microsoft/vcpkg"
+branch = "master"
+
+[package.metadata.vcpkg.target]
+x86_64-pc-windows-msvc = { triplet = "x64-windows-static-md" }
