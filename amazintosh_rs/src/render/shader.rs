@@ -230,15 +230,15 @@ impl ShaderProgram {
     /// application state. If there are errors that occur that are difficult
     /// to trace, this method may reveal what the issue is other than just
     /// "Invalid operation."
-    pub fn validate(&mut self, gl: &mut Gl) -> Result<(), ShaderError> {
+    pub fn validate(&mut self) -> Result<(), ShaderError> {
         // Validate the program
         unsafe {
-            gl.0.ValidateProgram(self.handle);
+            self.gl.0.ValidateProgram(self.handle);
         }
 
         // Check for validation errors
         gl_error_check!(
-            gl,
+            self.gl,
             self.handle,
             GetProgramiv,
             GetProgramInfoLog,

@@ -1,10 +1,30 @@
-use super::inner_gl;
-use super::inner_gl::types::{GLint, GLuint, GLushort, GLvoid};
-use super::Gl;
-use crate::render::vertex::{Buffer, BufferType, BufferUsage, Vertex};
-use std::convert::TryInto;
+use super::buffer::{Buffer, BufferType, BufferUsage};
+use super::vertex::Vertex;
+use crate::render::vertex::VertexAttribPointer;
+use crate::render::{GlDataType, RenderHandler};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum MeshMode {
+    Triangles,
+}
+
+pub trait MeshHandler: Clone {
+    fn gen_vertex_array(&mut self) -> u32;
+
+    fn delete_vertex_array(&mut self, handle: u32);
+
+    fn vertex_attrib_pointer<VertexType: Vertex>(&mut self, pointer: &VertexAttribPointer);
+
+    fn enable_attrib_array(&mut self, index: usize);
+
+    fn disable_attrib_array(&mut self, index: usize);
+
+    fn bind_vertex_array(&mut self, handle: u32);
+
+    fn draw_elements<IndexType: GlDataType>(&mut self, mode: MeshMode, indices: usize);
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum MeshError {
@@ -21,128 +41,75 @@ impl Display for MeshError {
 
 impl Error for MeshError {}
 
-pub struct Mesh<VertexType: Vertex> {
-    gl: Gl,
-    vao: GLuint,
-    vbo: Option<Buffer<VertexType>>,
-    ebo: Option<Buffer<GLushort>>,
-    indices: GLint,
-    attrib_indices: Vec<GLuint>,
+pub struct Mesh<RHType: RenderHandler, VertexType: Vertex, IndexType: GlDataType> {
+    render_handler: RHType,
+    vao: u32,
+    vbo: Buffer<RHType, VertexType>,
+    ebo: Buffer<RHType, IndexType>,
+    elements: usize,
 }
 
-impl<VertexType: Vertex> Mesh<VertexType> {
-    pub fn new(gl: &mut Gl) -> Result<Self, MeshError> {
-        Ok(Self {
-            vao: {
-                let mut vao: GLuint = 0;
-                unsafe {
-                    gl.0.GenVertexArrays(1, &mut vao);
-                }
-                Ok(vao)
-            }?,
-            gl: gl.clone(),
-            vbo: None,
-            ebo: None,
-            indices: 0,
-            attrib_indices: Vec::with_capacity(1),
-        })
+impl<RHType: RenderHandler, VertexType: Vertex, IndexType: GlDataType>
+    Mesh<RHType, VertexType, IndexType>
+{
+    pub fn new(render_handler: &mut RHType) -> Self {
+        let mut mesh = Self {
+            vao: render_handler.gen_vertex_array(),
+            vbo: Buffer::new(render_handler, BufferType::ArrayBuffer),
+            ebo: Buffer::new(render_handler, BufferType::ElementArrayBuffer),
+            render_handler: render_handler.clone(),
+            elements: 0,
+        };
+
+        mesh.bind();
+        mesh.vbo.bind();
+
+        VertexType::attrib_pointers()
+            .iter()
+            .for_each(|ptr| mesh.render_handler.vertex_attrib_pointer::<VertexType>(ptr));
+
+        mesh
     }
 
-    pub fn update_data(
-        &mut self,
-        vertices: Vec<VertexType>,
-        indices: Vec<u16>,
-        usage: BufferUsage,
-    ) -> Result<(), MeshError> {
+    pub fn set_vertices(&mut self, vertices: Vec<VertexType>, usage: BufferUsage) {
         self.bind();
 
-        let indices_count = indices
-            .len()
-            .try_into()
-            .map_err(|_| MeshError::FailedToUpdateData)?;
+        self.vbo.buffer_data(vertices, usage);
+    }
 
-        let mut vbo = Buffer::new(&mut self.gl, BufferType::ArrayBuffer)
-            .expect("failed to create vertex buffer");
-        vbo.buffer_data(vertices, usage)
-            .map_err(|_| MeshError::FailedToBufferData)?;
+    pub fn set_indices(&mut self, indices: Vec<IndexType>, usage: BufferUsage) {
+        self.bind();
 
-        let mut ebo = Buffer::new(&mut self.gl, BufferType::ElementArrayBuffer)
-            .expect("failed to create element array buffer");
-        ebo.buffer_data(indices, usage)
-            .map_err(|_| MeshError::FailedToBufferData)?;
+        let element_count = indices.len();
 
-        for (index, attrib_pointer) in VertexType::setup_attrib_pointers().iter().enumerate() {
-            self.attrib_indices.push(index as GLuint);
+        self.ebo.buffer_data(indices, usage);
 
-            unsafe {
-                self.gl.0.VertexAttribPointer(
-                    index
-                        .try_into()
-                        .map_err(|_| MeshError::FailedToSetupAttribs)?,
-                    attrib_pointer
-                        .size
-                        .try_into()
-                        .map_err(|_| MeshError::FailedToSetupAttribs)?,
-                    attrib_pointer.data_type,
-                    if attrib_pointer.normalized {
-                        inner_gl::TRUE
-                    } else {
-                        inner_gl::FALSE
-                    },
-                    std::mem::size_of::<VertexType>()
-                        .try_into()
-                        .map_err(|_| MeshError::FailedToSetupAttribs)?,
-                    attrib_pointer.offset as *const GLvoid,
-                );
-            }
-        }
-
-        self.vbo = Some(vbo);
-        self.ebo = Some(ebo);
-        self.indices = indices_count;
-
-        Ok(())
+        self.elements = element_count;
     }
 
     pub fn render(&mut self) {
-        self.bind();
-        if let Some(ebo) = &mut self.ebo {
-            ebo.bind();
-
-            for attrib_pointers in self.attrib_indices.iter() {
-                unsafe {
-                    self.gl.0.EnableVertexAttribArray(*attrib_pointers);
-                }
-            }
-
-            unsafe {
-                self.gl.0.DrawElements(
-                    inner_gl::TRIANGLES,
-                    self.indices,
-                    inner_gl::UNSIGNED_SHORT,
-                    std::ptr::null(),
-                );
-            }
-
-            for attrib_pointers in self.attrib_indices.iter() {
-                unsafe {
-                    self.gl.0.DisableVertexAttribArray(*attrib_pointers);
-                }
-            }
+        // No need to try to render
+        if self.elements < 1 {
+            return;
         }
+
+        self.bind();
+        self.ebo.bind();
+
+        VertexType::render(&mut self.render_handler, self.elements);
     }
 
     pub fn bind(&mut self) {
-        unsafe {
-            self.gl.0.BindVertexArray(self.vao);
-        }
+        self.render_handler.bind_vertex_array(self.vao);
     }
 }
 
-impl<VertexType: Vertex> Drop for Mesh<VertexType> {
+impl<RHType: RenderHandler, VertexType: Vertex, IndexType: GlDataType> Drop
+    for Mesh<RHType, VertexType, IndexType>
+{
     fn drop(&mut self) {
-        unsafe {
-            self.gl.0.DeleteVertexArrays(1, &self.vao);
-        }
+        println!("Dropped VAO: {}", self.vao);
+
+        self.render_handler.delete_vertex_array(self.vao)
     }
 }

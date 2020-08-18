@@ -1,16 +1,14 @@
 use amazintosh_rs::glm::Vec3;
-use amazintosh_rs::render::inner_gl;
-use amazintosh_rs::render::inner_gl::types::GLvoid;
-use amazintosh_rs::render::mesh::Mesh;
+use amazintosh_rs::render::buffer::BufferUsage;
+use amazintosh_rs::render::mesh::{Mesh, MeshMode};
 use amazintosh_rs::render::shader::{Shader, ShaderProgram, ShaderType};
 use amazintosh_rs::render::types::RGBAColor;
-use amazintosh_rs::render::vertex::{BufferUsage, Vertex, VertexAttribPointer};
-use amazintosh_rs::render::Gl;
+use amazintosh_rs::render::vertex::{Vertex, VertexAttribPointer};
+use amazintosh_rs::render::{Gl, RenderHandler};
 use amazintosh_rs::sdl2::event::Event;
 use amazintosh_rs::sdl2::event::WindowEvent;
 use amazintosh_rs::sdl2::keyboard::Keycode;
 use amazintosh_rs::window::{AWindow, SdlWindow};
-use std::convert::TryInto;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -27,17 +25,25 @@ impl PosVert {
 
 // TODO: AUTO-IMPLEMENT
 impl Vertex for PosVert {
-    fn setup_attrib_pointers() -> Vec<VertexAttribPointer> {
+    fn attrib_pointers() -> Vec<VertexAttribPointer> {
         vec![
-            VertexAttribPointer::new::<f32>(3, false, 0),
-            VertexAttribPointer::new::<f32>(3, false, std::mem::size_of::<Vec3>()),
+            VertexAttribPointer::new::<f32>(0, 3, false, 0),
+            VertexAttribPointer::new::<f32>(1, 3, false, std::mem::size_of::<Vec3>()),
         ]
+    }
+
+    fn render<RHType: RenderHandler>(render_handler: &mut RHType, elements: usize) {
+        render_handler.enable_attrib_array(0);
+        render_handler.enable_attrib_array(1);
+        render_handler.draw_elements::<u16>(MeshMode::Triangles, elements);
+        render_handler.disable_attrib_array(0);
+        render_handler.disable_attrib_array(1);
     }
 }
 
 struct AppState {
     test_shaders: ShaderProgram,
-    test_mesh: Mesh<PosVert>,
+    test_mesh: Mesh<Gl, PosVert, u16>,
 }
 
 fn main() {
@@ -48,30 +54,33 @@ fn main() {
     )
     .expect("failed to create window");
 
-    let mut gl = window.ctx().expect("failed to get OpenGL context");
-
-    gl.set_clear_color(RGBAColor::from_rgb(0.2, 0.3, 0.4));
+    let mut render = window.ctx().expect("failed to get OpenGL context");
 
     let test_shaders = {
         let vertex_shader = Shader::create_shader(
-            &mut gl,
+            &mut render,
             ShaderType::Vertex,
             include_str!("./vertex_test.glsl"),
         )
         .expect("failed to compile vertex shader");
         let fragment_shader = Shader::create_shader(
-            &mut gl,
+            &mut render,
             ShaderType::Fragment,
             include_str!("./fragment_test.glsl"),
         )
         .expect("failed to compile fragment shader");
 
-        ShaderProgram::from_shaders(&mut gl, Some(vertex_shader), None, Some(fragment_shader))
-            .expect("failed to link program")
+        ShaderProgram::from_shaders(
+            &mut render,
+            Some(vertex_shader),
+            None,
+            Some(fragment_shader),
+        )
+        .expect("failed to link program")
     };
 
     let test_mesh = {
-        let mut test_mesh = Mesh::new(&mut gl).expect("failed to create test mesh");
+        let mut test_mesh = Mesh::new(&mut render);
 
         let mesh_verts = vec![
             PosVert::new(Vec3::new(0.0, 0.5, 0.0), Vec3::new(1.0, 0.0, 0.0)),
@@ -80,12 +89,13 @@ fn main() {
         ];
         let mesh_inds = vec![0, 1, 2];
 
-        test_mesh
-            .update_data(mesh_verts, mesh_inds, BufferUsage::StaticDraw)
-            .expect("failed to upload test mesh data to GPU");
+        test_mesh.set_vertices(mesh_verts, BufferUsage::StaticDraw);
+        test_mesh.set_indices(mesh_inds, BufferUsage::StaticDraw);
 
         test_mesh
     };
+
+    render.set_clear_color(RGBAColor::from_rgb(0.2, 0.3, 0.4));
 
     window
         .start_loop(
