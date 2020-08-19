@@ -10,6 +10,8 @@ pub trait AWindow<ContextType, WindowEventType> {
 
     fn set_size(&mut self, size: (usize, usize)) -> Result<(), Self::ErrorType>;
 
+    fn size(&self) -> (usize, usize);
+
     fn hide(&mut self) -> Result<(), Self::ErrorType>;
 
     fn ctx(&mut self) -> Option<ContextType>;
@@ -116,6 +118,11 @@ impl AWindow<Gl, sdl2::event::Event> for SdlWindow {
         self.window
             .set_size(size.0 as u32, size.1 as u32)
             .map_err(|_| SdlWindowError::IntegerOverflow)
+    }
+
+    fn size(&self) -> (usize, usize) {
+        let (w, h) = self.window.size();
+        (w as usize, h as usize)
     }
 
     fn hide(&mut self) -> Result<(), Self::ErrorType> {

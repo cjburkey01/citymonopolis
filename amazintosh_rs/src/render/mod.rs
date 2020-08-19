@@ -19,13 +19,15 @@ pub mod inner_gl {
 }
 
 use crate::render::mesh::{MeshHandler, MeshMode};
+use crate::render::shader::{ShaderHandler, ShaderUniformValue};
 use crate::render::vertex::{Vertex, VertexAttribPointer};
 use buffer::{BufferHandler, BufferType, BufferUsage};
 use inner_gl::types::{GLenum, GLsizei, GLuint, GLvoid};
+use nalgebra::{Matrix2, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use std::rc::Rc;
 use types::RGBAColor;
 
-pub trait RenderHandler: BufferHandler + MeshHandler {}
+pub trait RenderHandler: BufferHandler + MeshHandler + ShaderHandler {}
 
 pub trait GlType {
     fn gl_type(&self) -> GLenum;
@@ -225,4 +227,94 @@ impl MeshHandler for Gl {
     }
 }
 
+impl ShaderHandler for Gl {
+    fn uniform1f(&mut self, location: i32, value: f32) {
+        unsafe {
+            self.0.Uniform1f(location, value);
+        }
+    }
+
+    fn uniform2f(&mut self, location: i32, value: Vector2<f32>) {
+        unsafe {
+            self.0.Uniform2f(location, value.x, value.y);
+        }
+    }
+
+    fn uniform3f(&mut self, location: i32, value: Vector3<f32>) {
+        unsafe {
+            self.0.Uniform3f(location, value.x, value.y, value.z);
+        }
+    }
+
+    fn uniform4f(&mut self, location: i32, value: Vector4<f32>) {
+        unsafe {
+            self.0
+                .Uniform4f(location, value.x, value.y, value.z, value.w);
+        }
+    }
+
+    fn uniform2x2f(&mut self, location: i32, value: Matrix2<f32>) {
+        unsafe {
+            self.0
+                .UniformMatrix2fv(location, 1, inner_gl::FALSE, value.as_ptr());
+        }
+    }
+
+    fn uniform3x3f(&mut self, location: i32, value: Matrix3<f32>) {
+        unsafe {
+            self.0
+                .UniformMatrix3fv(location, 1, inner_gl::FALSE, value.as_ptr());
+        }
+    }
+
+    fn uniform4x4f(&mut self, location: i32, value: Matrix4<f32>) {
+        unsafe {
+            self.0
+                .UniformMatrix4fv(location, 1, inner_gl::FALSE, value.as_ptr());
+        }
+    }
+}
+
 impl RenderHandler for Gl {}
+
+impl ShaderUniformValue for f32 {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform1f(location, *self);
+    }
+}
+
+impl ShaderUniformValue for Vector2<f32> {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform2f(location, *self);
+    }
+}
+
+impl ShaderUniformValue for Vector3<f32> {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform3f(location, *self);
+    }
+}
+
+impl ShaderUniformValue for Vector4<f32> {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform4f(location, *self);
+    }
+}
+
+impl ShaderUniformValue for Matrix2<f32> {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform2x2f(location, *self);
+    }
+}
+
+impl ShaderUniformValue for Matrix3<f32> {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform3x3f(location, *self);
+    }
+}
+
+impl ShaderUniformValue for Matrix4<f32> {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32) {
+        render_handler.uniform4x4f(location, *self);
+    }
+}

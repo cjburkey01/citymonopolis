@@ -1,4 +1,5 @@
-use amazintosh_rs::glm::Vec3;
+use amazintosh_rs::nalgebra;
+use amazintosh_rs::nalgebra::{Affine3, Isometry3, Matrix4, Perspective3, Similarity3, Vector3};
 use amazintosh_rs::render::buffer::BufferUsage;
 use amazintosh_rs::render::mesh::{Mesh, MeshMode};
 use amazintosh_rs::render::shader::{Shader, ShaderProgram, ShaderType};
@@ -13,12 +14,12 @@ use amazintosh_rs::window::{AWindow, SdlWindow};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct PosVert {
-    position: Vec3,
-    color: Vec3,
+    position: Vector3<f32>,
+    color: Vector3<f32>,
 }
 
 impl PosVert {
-    pub fn new(position: Vec3, color: Vec3) -> Self {
+    pub fn new(position: Vector3<f32>, color: Vector3<f32>) -> Self {
         Self { position, color }
     }
 }
@@ -28,7 +29,7 @@ impl Vertex for PosVert {
     fn attrib_pointers() -> Vec<VertexAttribPointer> {
         vec![
             VertexAttribPointer::new::<f32>(0, 3, false, 0),
-            VertexAttribPointer::new::<f32>(1, 3, false, std::mem::size_of::<Vec3>()),
+            VertexAttribPointer::new::<f32>(1, 3, false, std::mem::size_of::<Vector3<f32>>()),
         ]
     }
 
@@ -75,6 +76,7 @@ fn main() {
             Some(vertex_shader),
             None,
             Some(fragment_shader),
+            vec!["projection", "view", "object"],
         )
         .expect("failed to link program")
     };
@@ -83,9 +85,9 @@ fn main() {
         let mut test_mesh = Mesh::new(&mut render);
 
         let mesh_verts = vec![
-            PosVert::new(Vec3::new(0.0, 0.5, 0.0), Vec3::new(1.0, 0.0, 0.0)),
-            PosVert::new(Vec3::new(-0.5, -0.5, 0.0), Vec3::new(0.0, 1.0, 0.0)),
-            PosVert::new(Vec3::new(0.5, -0.5, 0.0), Vec3::new(0.0, 0.0, 1.0)),
+            PosVert::new(Vector3::new(0.0, 0.5, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+            PosVert::new(Vector3::new(-0.5, -0.5, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+            PosVert::new(Vector3::new(0.5, -0.5, 0.0), Vector3::new(0.0, 0.0, 1.0)),
         ];
         let mesh_inds = vec![0, 1, 2];
 
@@ -108,9 +110,32 @@ fn main() {
                     gl.clear(true, false);
                 }
 
+                // TODO:
+                let (width, height) = window.size();
+                let projection = Perspective3::new(
+                    width as f32 / height as f32,
+                    std::f32::consts::PI / 2.0,
+                    0.1,
+                    100.0,
+                )
+                .to_homogeneous();
+                let view: Matrix4<f32> = nalgebra::convert(Isometry3::new(
+                    Vector3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 0.0),
+                ));
+                let object: Matrix4<f32> = nalgebra::convert(Similarity3::new(
+                    Vector3::new(0.0, 0.0, -1.0),
+                    Vector3::new(0.0, 0.0, 0.0),
+                    1.0,
+                ));
+
                 app_state.test_shaders.bind();
+                app_state.test_shaders.uniform("projection", projection);
+                app_state.test_shaders.uniform("view", view);
+                app_state.test_shaders.uniform("object", object);
 
                 app_state.test_mesh.render();
+                // END TODO
 
                 false
             },

@@ -1,6 +1,7 @@
 use super::inner_gl;
 use super::inner_gl::types::{GLchar, GLint, GLuint};
-use crate::render::Gl;
+use crate::render::{Gl, RenderHandler};
+use nalgebra::{Matrix2, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
@@ -51,6 +52,22 @@ macro_rules! gl_error_check {
     }};
 }
 
+pub trait ShaderHandler: Clone {
+    fn uniform1f(&mut self, location: i32, value: f32);
+
+    fn uniform2f(&mut self, location: i32, value: Vector2<f32>);
+
+    fn uniform3f(&mut self, location: i32, value: Vector3<f32>);
+
+    fn uniform4f(&mut self, location: i32, value: Vector4<f32>);
+
+    fn uniform2x2f(&mut self, location: i32, value: Matrix2<f32>);
+
+    fn uniform3x3f(&mut self, location: i32, value: Matrix3<f32>);
+
+    fn uniform4x4f(&mut self, location: i32, value: Matrix4<f32>);
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ShaderType {
     Vertex,
@@ -77,6 +94,8 @@ pub enum ShaderError {
     CreateShaderProgramFailed,
     LinkError(String),
     ValidateError(String),
+    InvalidUniformName(String),
+    DuplicateUniform(String),
 }
 
 impl Display for ShaderError {
@@ -147,10 +166,14 @@ impl Drop for Shader {
     }
 }
 
+pub trait ShaderUniformValue {
+    fn uniform<RHType: RenderHandler>(&self, render_handler: &mut RHType, location: i32);
+}
+
 pub struct ShaderProgram {
     gl: Gl,
     handle: GLuint,
-    _uniforms: HashMap<String, GLuint>,
+    uniforms: HashMap<String, GLint>,
 }
 
 impl ShaderProgram {
@@ -159,6 +182,7 @@ impl ShaderProgram {
         vertex_shader: Option<Shader>,
         geometry_shader: Option<Shader>,
         fragment_shader: Option<Shader>,
+        uniforms: Vec<&str>,
     ) -> Result<Self, ShaderError> {
         let program = Self {
             gl: gl.clone(),
@@ -170,7 +194,7 @@ impl ShaderProgram {
                 }
                 handle
             },
-            _uniforms: HashMap::new(),
+            uniforms: HashMap::new(),
         };
 
         // Attach the shaders if they are provided
@@ -222,8 +246,32 @@ impl ShaderProgram {
 
         /* The shaders will be dropped after this as they are no longer needed */
 
-        // Return the program
-        Ok(program)
+        Ok({
+            // Get a mutable reference
+            let mut program = program;
+
+            for uniform in uniforms {
+                let uniform_name = CString::new(uniform.as_bytes())
+                    .map_err(|_| ShaderError::InvalidUniformName(uniform.to_owned()))?;
+                let location: GLint = unsafe {
+                    gl.0.GetUniformLocation(program.handle, uniform_name.as_ptr())
+                };
+
+                if location < 0 {
+                    eprintln!("Unable to locate uniform \"{}\" in shader", uniform);
+                    continue;
+                }
+
+                let owned_key = uniform.to_owned();
+                match program.uniforms.insert(owned_key, location) {
+                    Some(_) => return Err(ShaderError::DuplicateUniform(uniform.to_owned())),
+                    None => {}
+                }
+            }
+
+            // Return the program
+            program
+        })
     }
 
     /// Checks whether this program could be executed given the current OpenGL
@@ -249,6 +297,12 @@ impl ShaderProgram {
     pub fn bind(&mut self) {
         unsafe {
             self.gl.0.UseProgram(self.handle);
+        }
+    }
+
+    pub fn uniform<Value: ShaderUniformValue>(&mut self, uniform: &str, value: Value) {
+        if let Some(location) = self.uniforms.get(uniform) {
+            value.uniform(&mut self.gl, *location);
         }
     }
 }
